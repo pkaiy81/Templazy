@@ -1,0 +1,74 @@
+name: Build Templazy
+
+# 手動実行（Actionsタブの Run workflow）または v* タグ push でビルド
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-13          # Intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+            name: macos-intel
+          - os: macos-14          # Apple Silicon
+            target: aarch64-apple-darwin
+            bundles: dmg
+            name: macos-arm
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: "msi,nsis"
+            name: windows-x64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb
+            name: linux-x64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      # 社内テンプレ(seed)は CI に載せない。常に空でビルドし、テンプレはアプリの
+      # 「JSONインポート」で各自取り込む運用にする。
+      - name: Use empty seed
+        shell: bash
+        run: echo "[]" > src-tauri/seed_templates.json
+
+      - name: Build
+        working-directory: src-tauri
+        run: cargo tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: templazy-${{ matrix.name }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/**
+          if-no-files-found: error
