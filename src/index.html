@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Templazy — テンプレ貼り付けツール</title>
+<meta name="theme-color" content="#2563eb">
+<!-- ウィンドウ/アプリのアイコンは Tauri のバンドル(icons/)が担当するため、ここでは指定しない -->
+<meta name="application-name" content="Templazy">
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --border: #d8dbe0;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --muted: #6b7280;
+    --danger: #dc2626;
+    --ok: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    background: var(--bg);
+    color: #1f2937;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  header.appbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 16px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header.appbar h1 { font-size: 18px; margin: 0; }
+  .viewtabs { display: flex; gap: 4px; margin-left: auto; }
+  .viewtabs button {
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .viewtabs button.active { background: var(--accent); color: #fff; }
+
+  button {
+    font-family: inherit;
+  }
+  .btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .btn:hover { background: var(--accent-hover); }
+  .btn.secondary { background: #e5e7eb; color: #1f2937; }
+  .btn.secondary:hover { background: #d1d5db; }
+  .btn.danger { background: var(--danger); }
+  .btn.small { padding: 4px 10px; font-size: 13px; }
+
+  main { padding: 16px 24px; max-width: 1760px; margin: 0 auto; }
+
+  /* ---- タブバー（作成画面） ---- */
+  .tabbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+    padding-bottom: 6px;
+  }
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px 6px 0 0;
+    padding: 6px 10px;
+    cursor: pointer;
+    max-width: 220px;
+  }
+  .tab.active { border-bottom-color: var(--panel); background: #eef2ff; font-weight: 600; }
+  .tab .tab-title {
+    display: inline-block; vertical-align: middle;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px;
+    background: transparent; border: none; font: inherit; padding: 0; cursor: pointer;
+  }
+  .tab .tab-title:focus { cursor: text; }
+  .tab .tab-close {
+    border: none; background: transparent; cursor: pointer; color: var(--muted);
+    font-size: 16px; line-height: 1; padding: 0 2px;
+  }
+  .tab .tab-close:hover { color: var(--danger); }
+  .tab-add {
+    border: 1px dashed var(--border); background: transparent; border-radius: 6px;
+    padding: 6px 12px; cursor: pointer; font-size: 16px;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .col { flex: 1 1 360px; min-width: 320px; }
+  label.field { display: block; margin-bottom: 4px; font-weight: 600; font-size: 14px; }
+  select, input[type=text], input[type=date], textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 16px;
+    line-height: 1.6;
+    background: #fff;
+  }
+  textarea { resize: vertical; min-height: 140px; }
+  textarea.codeblock { font-family: ui-monospace, Menlo, Consolas, monospace; white-space: pre; font-size: 15px; }
+  .form-field { margin-bottom: 12px; }
+
+  .preview {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    min-height: 360px;
+    background: #fff;
+    overflow: auto;
+    font-size: 16px;
+    line-height: 1.7;
+  }
+  .preview ul, .preview ol { margin: 6px 0 6px 24px; padding: 0; }
+  .copy-bar { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  /* ---- リッチエディタ ---- */
+  .rt-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    background: #f9fafb;
+  }
+  .rt-toolbar button {
+    min-width: 34px;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    color: #1f2937;
+  }
+  .rt-toolbar button:hover { background: #eef2ff; border-color: var(--accent); }
+  .rt-toolbar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+  .editable {
+    border: 1px solid var(--border);
+    border-radius: 0 0 6px 6px;
+    padding: 16px;
+    min-height: 340px;
+    background: #fff;
+    font-size: 16px;
+    line-height: 1.7;
+    overflow: auto;
+  }
+  .editable:focus { outline: 2px solid var(--accent); }
+  /* 作成画面のリッチ入力欄（テンプレ本文ほど高くしない） */
+  .rich-input { min-height: 120px; }
+  .editable ul, .editable ol { margin: 6px 0 6px 24px; padding: 0; }
+  .editable h2 { font-size: 20px; margin: 14px 0 8px; }
+  .editable h3 { font-size: 17px; margin: 12px 0 6px; }
+  .editable pre {
+    background: #f5f5f5; padding: 10px; border-radius: 4px;
+    border: 1px solid #e0e0e0; font-family: ui-monospace, Consolas, monospace;
+    white-space: pre-wrap;
+  }
+
+  table.vars { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  table.vars th, table.vars td { border: 1px solid var(--border); padding: 6px; text-align: left; font-size: 13px; }
+  table.vars th { background: #f0f2f5; }
+  table.vars input, table.vars select { padding: 4px 6px; }
+
+  .tpl-list { list-style: none; padding: 0; margin: 0; }
+  .tpl-list li {
+    display: flex; align-items: center; gap: 8px; padding: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tpl-list li:last-child { border-bottom: none; }
+  .tpl-list .name { flex: 1; }
+  .badge {
+    font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #e5e7eb; color: #374151;
+  }
+  .badge.shared { background: #dbeafe; color: #1e40af; }
+  .badge.personal { background: #dcfce7; color: #166534; }
+  .badge.overridden { background: #fef3c7; color: #92400e; }
+
+  .hint { color: var(--muted); font-size: 12px; margin: 4px 0; }
+  .hidden { display: none !important; }
+
+  /* トースト */
+  #toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: #111827; color: #fff; padding: 10px 18px; border-radius: 8px;
+    opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 100; max-width: 80%;
+  }
+  #toast.show { opacity: 1; }
+  #toast.ok { background: var(--ok); }
+  #toast.err { background: var(--danger); }
+</style>
+</head>
+<body>
+<header class="appbar">
+  <h1>Templazy <span style="font-size:12px;font-weight:400;color:var(--muted);">— 面倒な定型文を、ラクに。</span></h1>
+  <div class="viewtabs">
+    <button id="nav-create" class="active" onclick="App.showView('create')">作成</button>
+    <button id="nav-editor" onclick="App.showView('editor')">テンプレート編集</button>
+  </div>
+</header>
+
+<main>
+  <!-- ===================== 作成画面 ===================== -->
+  <section id="view-create">
+    <div class="tabbar" id="tabbar"></div>
+    <div id="tab-content"><!-- アクティブタブの中身 --></div>
+  </section>
+
+  <!-- ===================== テンプレート編集画面 ===================== -->
+  <section id="view-editor" class="hidden">
+    <div class="row">
+      <div class="col">
+        <div class="panel">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <strong style="flex:1;">テンプレート一覧</strong>
+            <button class="btn small" onclick="App.newTemplate()">＋ 新規</button>
+          </div>
+          <ul class="tpl-list" id="tpl-list"></ul>
+          <hr style="margin:12px 0;border:none;border-top:1px solid var(--border);">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn secondary small" onclick="App.exportTemplates()">JSONエクスポート</button>
+            <button class="btn secondary small" onclick="document.getElementById('import-file').click()">JSONインポート</button>
+            <input type="file" id="import-file" accept=".json" class="hidden" onchange="App.importTemplates(event)">
+          </div>
+          <p class="hint">エクスポートは作成したテンプレートをまとめて出力します（バックアップ・他環境への移行用）。</p>
+        </div>
+      </div>
+
+      <div class="col" style="flex: 2 1 520px;">
+        <div class="panel" id="editor-form" class="hidden">
+          <div class="form-field">
+            <label class="field">テンプレート名</label>
+            <input type="text" id="ed-name" placeholder="テンプレート名">
+          </div>
+
+          <div class="form-field">
+            <label class="field">本文（リッチテキストを貼り付け）</label>
+            <p class="hint">
+              ここに対応ツールやメール等からリッチテキストを貼り付けてください。装飾はインライン化されます。<br>
+              可変部分にしたい箇所を選択して「選択を変数化」を押すと <code>{{key}}</code> に置換します。<br>
+              <strong>太字・斜体・箇条書き・階層</strong>は下のツールバーで編集できます（行頭で「- 」や「1. 」と入力しても箇条書きになります。Tab でインデント＝階層化、Shift+Tab で戻す）。
+            </p>
+            <div class="rt-toolbar" id="ed-toolbar">
+              <button type="button" title="太字 (Ctrl+B)" onclick="App.fmt('bold')"><b>B</b></button>
+              <button type="button" title="斜体 (Ctrl+I)" onclick="App.fmt('italic')"><i>I</i></button>
+              <button type="button" title="下線 (Ctrl+U)" onclick="App.fmt('underline')"><u>U</u></button>
+              <button type="button" title="取り消し線" onclick="App.fmt('strikeThrough')"><s>S</s></button>
+              <span class="sep"></span>
+              <button type="button" title="見出し（大）" onclick="App.fmt('formatBlock','H2')">H2</button>
+              <button type="button" title="見出し（小）" onclick="App.fmt('formatBlock','H3')">H3</button>
+              <button type="button" title="本文に戻す" onclick="App.fmt('formatBlock','P')">¶</button>
+              <span class="sep"></span>
+              <button type="button" title="箇条書き" onclick="App.fmt('insertUnorderedList')">• 一覧</button>
+              <button type="button" title="番号付きリスト" onclick="App.fmt('insertOrderedList')">1. 一覧</button>
+              <button type="button" title="インデント（階層を下げる）" onclick="App.fmt('indent')">⇥</button>
+              <button type="button" title="アウトデント（階層を上げる）" onclick="App.fmt('outdent')">⇤</button>
+              <span class="sep"></span>
+              <button type="button" title="リンク" onclick="App.makeLink()">🔗</button>
+              <button type="button" title="ログ／コードブロック挿入（改行・字下げ保持。一覧の中にも入れられます）" onclick="App.insertCodeBlock()">&lt;/&gt; ログ</button>
+              <span class="sep"></span>
+              <button type="button" title="装飾を解除" onclick="App.clearFormat()">解除</button>
+            </div>
+            <div class="editable" id="ed-body" contenteditable="true"></div>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn small secondary" onclick="App.variableizeSelection()">選択を変数化</button>
+              <button class="btn small secondary" onclick="document.getElementById('ed-html-file').click()">HTML読み込み</button>
+              <input type="file" id="ed-html-file" accept=".html,.htm" class="hidden" onchange="App.loadHtmlFile(event)">
+              <button class="btn small secondary" onclick="App.extractVariables()">変数を抽出/更新</button>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label class="field">可変部分（変数）</label>
+            <table class="vars">
+              <thead>
+                <tr><th style="width:25%;">キー</th><th style="width:30%;">ラベル</th><th style="width:22%;">種類</th><th>初期値</th></tr>
+              </thead>
+              <tbody id="ed-vars"></tbody>
+            </table>
+            <p class="hint">
+              種類: text=1行 / textarea=複数行 / date=日付 / codeblock=ログ等（&lt;pre&gt;で等幅・改行保持） / <strong>rich=リッチ入力（作成時にツールバーで太字・箇条書き・階層化を自由に編集。メール本文向け）</strong><br>
+              ※ textarea では行頭に「- 」「* 」（番号は「1. 」）を付けると<strong>箇条書き</strong>になり、
+              半角スペース2つ（またはTab）で字下げすると<strong>階層構造（ネスト）</strong>になります。
+            </p>
+          </div>
+
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button class="btn" onclick="App.saveTemplate()">保存</button>
+            <button class="btn danger" id="ed-delete" onclick="App.deleteTemplate()">削除</button>
+          </div>
+        </div>
+        <div class="panel" id="editor-empty">
+          <p class="hint">左の一覧からテンプレートを選ぶか「＋ 新規」で作成してください。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+
+// ============================================================
+// API クライアント（Tauri バックエンドの load/save コマンドを呼ぶ）
+// ============================================================
+const _invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
+const Api = {
+  async get(name) {
+    return await _invoke("load", { name });
+  },
+  async put(name, data) {
+    await _invoke("save", { name, data });
+    return { ok: true };
+  },
+};
+
+// ============================================================
+// ユーティリティ
+// ============================================================
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function uid(prefix) {
+  return (prefix || "id") + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+}
+
+let toastTimer = null;
+function toast(msg, kind) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = "show" + (kind ? " " + kind : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ""; }, 2600);
+}
+
+const PLACEHOLDER_RE = /\{\{\s*([\w-]+)\s*\}\}/g;
+
+// リッチ入力欄（rich変数）用の簡易ツールバーHTMLを生成。
+// onmousedown で既定動作を止め、入力欄のフォーカス/選択を保ったままコマンドを適用する。
+function richToolbarHtml() {
+  const b = (cmd, label, title) =>
+    `<button type="button" title="${title}" onmousedown="event.preventDefault()" onclick="App.fmt('${cmd}')">${label}</button>`;
+  return '<div class="rt-toolbar">'
+    + b("bold", "<b>B</b>", "太字")
+    + b("italic", "<i>I</i>", "斜体")
+    + b("underline", "<u>U</u>", "下線")
+    + '<span class="sep"></span>'
+    + b("insertUnorderedList", "• 一覧", "箇条書き")
+    + b("insertOrderedList", "1. 一覧", "番号付きリスト")
+    + b("indent", "⇥", "階層を下げる（Tab）")
+    + b("outdent", "⇤", "階層を上げる（Shift+Tab）")
+    + '<span class="sep"></span>'
+    + '<button type="button" title="ログ／コードブロック挿入（改行・字下げ保持。一覧の中にも入れられます）" onmousedown="event.preventDefault()" onclick="App.insertCodeBlock()">&lt;/&gt; ログ</button>'
+    + '<button type="button" title="リンク" onmousedown="event.preventDefault()" onclick="App.makeLink()">🔗</button>'
+    + '<button type="button" title="装飾を解除" onmousedown="event.preventDefault()" onclick="App.clearFormat()">解除</button>'
+    + '</div>';
+}
+
+// プレーンテキストを階層付きリスト混じりの HTML に変換。
+// 行頭の「- 」「* 」は <ul>、「1. 」「1) 」は <ol>。
+// 半角スペース2つ または Tab 1つで 1段の字下げ（ネスト）になる。
+function bulletBlockToHtml(items) {
+  let html = "";
+  const stack = []; // 開いているリストの種類(ul/ol)
+  let prevLevel = -1;
+  items.forEach(it => {
+    if (it.level > prevLevel) {
+      for (let l = prevLevel + 1; l <= it.level; l++) {
+        html += "<" + it.type + ' style="margin:4px 0 4px 24px;padding:0;">';
+        stack.push(it.type);
+      }
+    } else if (it.level < prevLevel) {
+      for (let l = it.level; l < prevLevel; l++) html += "</li></" + stack.pop() + ">";
+      html += "</li>";
+    } else {
+      html += "</li>";
+    }
+    html += "<li>" + it.content;
+    prevLevel = it.level;
+  });
+  if (prevLevel >= 0) {
+    html += "</li>";
+    while (stack.length > 1) html += "</" + stack.pop() + "></li>";
+    if (stack.length) html += "</" + stack.pop() + ">";
+  }
+  return html;
+}
+
+function plainToRichHtml(text) {
+  const lines = String(text == null ? "" : text).replace(/\r\n/g, "\n").split("\n");
+  let out = "";
+  let buf = [];
+  const flush = () => { if (buf.length) { out += bulletBlockToHtml(buf); buf = []; } };
+  lines.forEach(line => {
+    const m = line.match(/^(\s*)([-*]|\d+[.)])\s+(.*)$/);
+    if (m) {
+      const indent = m[1].replace(/\t/g, "  ").length;
+      buf.push({
+        level: Math.floor(indent / 2),
+        type: /^\d/.test(m[2]) ? "ol" : "ul",
+        content: escapeHtml(m[3]),
+      });
+    } else {
+      flush();
+      out += line.trim() === "" ? "<br>" : escapeHtml(line) + "<br>";
+    }
+  });
+  flush();
+  return out;
+}
+
+// 貼り付けHTMLの軽いサニタイズ/正規化（エディタ固有の冗長タグ・class除去）
+function sanitizeHtml(html) {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html;
+  const frag = tpl.content;
+  // 不要タグを除去
+  frag.querySelectorAll("script,style,meta,link,title,head").forEach(n => n.remove());
+  // コメントノード除去
+  const walker = document.createTreeWalker(frag, NodeFilter.SHOW_COMMENT, null);
+  const comments = [];
+  while (walker.nextNode()) comments.push(walker.currentNode);
+  comments.forEach(c => c.remove());
+  // class / id / 各種データ属性を除去（装飾はインラインstyleに統一）
+  frag.querySelectorAll("*").forEach(el => {
+    el.removeAttribute("class");
+    el.removeAttribute("id");
+    [...el.attributes].forEach(a => {
+      if (a.name.startsWith("data-") || a.name.startsWith("on")) el.removeAttribute(a.name);
+    });
+  });
+  const div = document.createElement("div");
+  div.appendChild(frag.cloneNode(true));
+  return div.innerHTML;
+}
+
+// {{key}} を入力値で置換し最終HTMLを生成（値は必ずエスケープ）
+function renderTemplate(bodyHtml, variables, values) {
+  const typeByKey = {};
+  (variables || []).forEach(v => { typeByKey[v.key] = v.type || "text"; });
+  return bodyHtml.replace(PLACEHOLDER_RE, (m, key) => {
+    const raw = (values && values[key] != null && values[key] !== "")
+      ? values[key]
+      : ((variables || []).find(v => v.key === key) || {}).defaultValue || "";
+    const type = typeByKey[key] || "text";
+    if (type === "rich") {
+      // ユーザーが整形したHTMLをそのまま差し込む（サニタイズのみ。階層リスト等を保持）
+      return sanitizeHtml(raw);
+    }
+    const esc = escapeHtml(raw);
+    if (type === "codeblock") {
+      // <pre> 内に入る前提。改行・空白はそのまま（<br>化しない）。エスケープのみ。
+      return esc;
+    }
+    if (type === "textarea") {
+      // 複数行：「- 」等は階層付きリスト化、それ以外は改行を <br> に。
+      return plainToRichHtml(raw);
+    }
+    // text / date
+    return esc;
+  });
+}
+
+// 最終HTMLからプレーンテキストを生成
+function htmlToPlain(html) {
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  // <br> と block 要素を改行に近づけるため innerText を使う
+  document.body.appendChild(div);
+  const text = div.innerText;
+  document.body.removeChild(div);
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// クリップボード書き込み（リッチ：html+plain 同時）
+async function copyRich(html, plain) {
+  try {
+    if (navigator.clipboard && window.ClipboardItem) {
+      const item = new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([plain], { type: "text/plain" }),
+      });
+      await navigator.clipboard.write([item]);
+      return true;
+    }
+  } catch (e) { /* フォールバックへ */ }
+  return copyHtmlFallback(html);
+}
+
+// execCommand フォールバック（contenteditable 経由）
+function copyHtmlFallback(html) {
+  const div = document.createElement("div");
+  div.setAttribute("contenteditable", "true");
+  div.style.position = "fixed";
+  div.style.left = "-9999px";
+  div.innerHTML = html;
+  document.body.appendChild(div);
+  const range = document.createRange();
+  range.selectNodeContents(div);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  sel.removeAllRanges();
+  document.body.removeChild(div);
+  return ok;
+}
+
+async function copyPlain(plain) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(plain);
+      return true;
+    }
+  } catch (e) { /* フォールバック */ }
+  const ta = document.createElement("textarea");
+  ta.value = plain;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  document.body.removeChild(ta);
+  return ok;
+}
+
+// ============================================================
+// アプリ本体
+// ============================================================
+const App = {
+  // データ層
+  personal: [],     // personal.json（テンプレートの配列）
+  tabsState: { tabs: [], activeTabId: null },
+
+  currentView: "create",
+  editingId: null,  // 編集中テンプレートID
+  saveTabsTimer: null,
+
+  // ---------- 初期化 ----------
+  async init() {
+    try {
+      const [personal, tabs] = await Promise.all([
+        Api.get("personal"),
+        Api.get("tabs"),
+      ]);
+      this.personal = Array.isArray(personal) ? personal : [];
+      this.tabsState = (tabs && Array.isArray(tabs.tabs)) ? tabs : { tabs: [], activeTabId: null };
+    } catch (e) {
+      toast("データ読み込みに失敗しました", "err");
+      console.error(e);
+    }
+    if (this.tabsState.tabs.length === 0) {
+      this._addTab(false); // 初回タブ
+    }
+    if (!this.tabsState.activeTabId || !this.tabsState.tabs.find(t => t.id === this.tabsState.activeTabId)) {
+      this.tabsState.activeTabId = this.tabsState.tabs[0].id;
+    }
+    this.renderTabs();
+    this.renderActiveTab();
+    this.renderTemplateList();
+    this.setupEditor();
+  },
+
+  // ---------- 表示用テンプレート一覧 ----------
+  mergedTemplates() {
+    return this.personal.map(t => Object.assign({}, t, { origin: "personal" }));
+  },
+
+  getTemplate(id) {
+    return this.mergedTemplates().find(t => t.id === id) || null;
+  },
+
+  // ---------- ビュー切替 ----------
+  showView(name) {
+    this.currentView = name;
+    document.getElementById("view-create").classList.toggle("hidden", name !== "create");
+    document.getElementById("view-editor").classList.toggle("hidden", name !== "editor");
+    document.getElementById("nav-create").classList.toggle("active", name === "create");
+    document.getElementById("nav-editor").classList.toggle("active", name === "editor");
+    if (name === "editor") this.renderTemplateList();
+    if (name === "create") { this.renderTabs(); this.renderActiveTab(); }
+  },
+
+  // ============================================================
+  // 作成画面（タブ式）
+  // ============================================================
+  _addTab(persist = true) {
+    const tab = { id: uid("tab"), templateId: "", title: "新しいタブ", values: {}, updatedAt: Date.now() };
+    this.tabsState.tabs.push(tab);
+    this.tabsState.activeTabId = tab.id;
+    if (persist) { this.renderTabs(); this.renderActiveTab(); this.scheduleSaveTabs(); }
+    return tab;
+  },
+
+  addTab() { this._addTab(true); },
+
+  // タブに作業内容（テンプレ選択や入力値）が入っているか
+  _tabHasInput(tab) {
+    if (!tab) return false;
+    if (tab.templateId) return true;
+    const vals = tab.values || {};
+    return Object.keys(vals).some(k => String(vals[k] || "").replace(/<[^>]*>/g, "").trim() !== "");
+  },
+
+  closeTab(id) {
+    const idx = this.tabsState.tabs.findIndex(t => t.id === id);
+    if (idx < 0) return;
+    // 作業中のタブは誤って消さないよう確認する（空タブはそのまま閉じる）
+    if (this._tabHasInput(this.tabsState.tabs[idx]) &&
+        !confirm("このタブの入力内容を削除して閉じますか？（元に戻せません）")) {
+      return;
+    }
+    this.tabsState.tabs.splice(idx, 1);
+    if (this.tabsState.tabs.length === 0) this._addTab(false);
+    if (this.tabsState.activeTabId === id) {
+      this.tabsState.activeTabId = this.tabsState.tabs[Math.max(0, idx - 1)].id;
+    }
+    this.renderTabs();
+    this.renderActiveTab();
+    this.scheduleSaveTabs();
+  },
+
+  selectTab(id) {
+    this.tabsState.activeTabId = id;
+    this.renderTabs();
+    this.renderActiveTab();
+    this.scheduleSaveTabs();
+  },
+
+  activeTab() {
+    return this.tabsState.tabs.find(t => t.id === this.tabsState.activeTabId) || this.tabsState.tabs[0];
+  },
+
+  renderTabs() {
+    const bar = document.getElementById("tabbar");
+    bar.innerHTML = "";
+    this.tabsState.tabs.forEach(tab => {
+      const div = document.createElement("div");
+      div.className = "tab" + (tab.id === this.tabsState.activeTabId ? " active" : "");
+      div.onclick = (e) => { if (e.target.classList.contains("tab-close")) return; this.selectTab(tab.id); };
+
+      // タイトルは通常は表示専用（クリック＝タブ切替）。ダブルクリックで名称変更モードに。
+      const title = document.createElement("span");
+      title.className = "tab-title";
+      title.textContent = tab.title || "タブ";
+      title.title = "ダブルクリックで名称変更";
+      title.ondblclick = (e) => { e.stopPropagation(); this._startRename(tab, title); };
+
+      const close = document.createElement("button");
+      close.className = "tab-close";
+      close.textContent = "×";
+      close.title = "タブを閉じる";
+      close.onclick = (e) => { e.stopPropagation(); this.closeTab(tab.id); };
+
+      div.appendChild(title);
+      div.appendChild(close);
+      bar.appendChild(div);
+    });
+    const add = document.createElement("button");
+    add.className = "tab-add";
+    add.textContent = "＋";
+    add.title = "新しいタブ";
+    add.onclick = () => this.addTab();
+    bar.appendChild(add);
+  },
+
+  // タブ名のインライン編集（ダブルクリックで開始、Enter/フォーカス外しで確定、Escで取消）
+  _startRename(tab, spanEl) {
+    const input = document.createElement("input");
+    input.className = "tab-title";
+    input.value = tab.title || "";
+    input.style.cursor = "text";
+    input.onclick = (e) => e.stopPropagation();
+    let done = false;
+    const commit = (cancel) => {
+      if (done) return;
+      done = true;
+      if (!cancel) tab.title = input.value.trim() || "タブ";
+      this.scheduleSaveTabs();
+      this.renderTabs();
+    };
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") { e.preventDefault(); commit(false); }
+      else if (e.key === "Escape") { e.preventDefault(); commit(true); }
+    };
+    input.onblur = () => commit(false);
+    spanEl.replaceWith(input);
+    input.focus();
+    input.select();
+  },
+
+  renderActiveTab() {
+    const tab = this.activeTab();
+    const root = document.getElementById("tab-content");
+    if (!tab) { root.innerHTML = ""; return; }
+
+    const templates = this.mergedTemplates();
+    const options = ['<option value="">テンプレートを選択…</option>']
+      .concat(templates.map(t =>
+        `<option value="${escapeHtml(t.id)}"${t.id === tab.templateId ? " selected" : ""}>${escapeHtml(t.name)}</option>`
+      )).join("");
+
+    root.innerHTML = `
+      <div class="row">
+        <div class="col">
+          <div class="panel">
+            <div class="form-field">
+              <label class="field">テンプレート</label>
+              <select id="tab-template-select">${options}</select>
+            </div>
+            <div id="tab-form"></div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="panel">
+            <label class="field">プレビュー</label>
+            <div class="preview" id="tab-preview"></div>
+            <div class="copy-bar">
+              <button class="btn" onclick="App.copyRichCurrent()">リッチでコピー</button>
+              <button class="btn secondary" onclick="App.copyPlainCurrent()">プレーンでコピー</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("tab-template-select").onchange = (e) => {
+      tab.templateId = e.target.value;
+      // テンプレ切替時、既存 values は維持（同keyは引き継ぐ）
+      this.renderTabForm();
+      this.renderPreview();
+      // タイトルが既定のままならテンプレ名に追従
+      if (!tab.title || tab.title === "新しいタブ") {
+        const t = this.getTemplate(tab.templateId);
+        if (t) { tab.title = t.name; this.renderTabs(); }
+      }
+      this.scheduleSaveTabs();
+    };
+
+    this.renderTabForm();
+    this.renderPreview();
+  },
+
+  renderTabForm() {
+    const tab = this.activeTab();
+    const formEl = document.getElementById("tab-form");
+    if (!formEl) return;
+    const t = this.getTemplate(tab.templateId);
+    if (!t) { formEl.innerHTML = '<p class="hint">テンプレートを選択すると入力フォームが表示されます。</p>'; return; }
+
+    if (!tab.values) tab.values = {};
+    let html = "";
+    (t.variables || []).forEach(v => {
+      const val = tab.values[v.key] != null ? tab.values[v.key] : (v.defaultValue || "");
+      const id = "f-" + tab.id + "-" + v.key;
+      html += `<div class="form-field"><label class="field" for="${id}">${escapeHtml(v.label || v.key)}</label>`;
+      if (v.type === "rich") {
+        // リッチ入力：ツールバー付き contenteditable（太字・箇条書き・Tabで階層化など自由に編集）
+        html += richToolbarHtml();
+        html += `<div class="editable rich-input" id="${id}" data-richkey="${escapeHtml(v.key)}" contenteditable="true">${val}</div>`;
+      } else if (v.type === "textarea") {
+        html += `<textarea id="${id}" data-key="${escapeHtml(v.key)}">${escapeHtml(val)}</textarea>`;
+      } else if (v.type === "codeblock") {
+        html += `<textarea id="${id}" class="codeblock" data-key="${escapeHtml(v.key)}" placeholder="ログ・出力結果を貼り付け">${escapeHtml(val)}</textarea>`;
+      } else if (v.type === "date") {
+        html += `<input type="date" id="${id}" data-key="${escapeHtml(v.key)}" value="${escapeHtml(val)}">`;
+      } else {
+        html += `<input type="text" id="${id}" data-key="${escapeHtml(v.key)}" value="${escapeHtml(val)}">`;
+      }
+      html += `</div>`;
+    });
+    formEl.innerHTML = html || '<p class="hint">このテンプレートに可変部分はありません。</p>';
+
+    // 通常入力（text/textarea/codeblock/date）
+    formEl.querySelectorAll("[data-key]").forEach(inp => {
+      const handler = () => {
+        tab.values[inp.dataset.key] = inp.value;
+        tab.updatedAt = Date.now();
+        this.renderPreview();
+        this.scheduleSaveTabs();
+      };
+      inp.addEventListener("input", handler);
+    });
+
+    // リッチ入力（contenteditable）
+    formEl.querySelectorAll("[data-richkey]").forEach(el => {
+      const key = el.dataset.richkey;
+      this.wireEditable(el, () => {
+        tab.values[key] = el.innerHTML;
+        tab.updatedAt = Date.now();
+        this.renderPreview();
+        this.scheduleSaveTabs();
+      });
+    });
+  },
+
+  buildCurrentHtml() {
+    const tab = this.activeTab();
+    const t = this.getTemplate(tab.templateId);
+    if (!t) return null;
+    return renderTemplate(t.bodyHtml || "", t.variables || [], tab.values || {});
+  },
+
+  renderPreview() {
+    const prev = document.getElementById("tab-preview");
+    if (!prev) return;
+    const html = this.buildCurrentHtml();
+    prev.innerHTML = html == null ? '<p class="hint">プレビューはここに表示されます。</p>' : html;
+  },
+
+  async copyRichCurrent() {
+    const html = this.buildCurrentHtml();
+    if (html == null) { toast("テンプレートを選択してください", "err"); return; }
+    const plain = htmlToPlain(html);
+    const ok = await copyRich(html, plain);
+    toast(ok ? "リッチテキストをコピーしました" : "コピーに失敗しました", ok ? "ok" : "err");
+  },
+
+  async copyPlainCurrent() {
+    const html = this.buildCurrentHtml();
+    if (html == null) { toast("テンプレートを選択してください", "err"); return; }
+    const plain = htmlToPlain(html);
+    const ok = await copyPlain(plain);
+    toast(ok ? "プレーンテキストをコピーしました" : "コピーに失敗しました", ok ? "ok" : "err");
+  },
+
+  scheduleSaveTabs() {
+    clearTimeout(this.saveTabsTimer);
+    this.saveTabsTimer = setTimeout(() => {
+      Api.put("tabs", this.tabsState).catch(e => console.error("tabs save failed", e));
+    }, 500);
+  },
+
+  // ============================================================
+  // リッチエディタ（テンプレート本文）ツールバー
+  // ============================================================
+  setupEditor() {
+    this.wireEditable(document.getElementById("ed-body"));
+    // ツールバーのボタンを押しても本文の選択範囲が外れないようにする
+    const tb = document.getElementById("ed-toolbar");
+    if (tb && !tb._wired) {
+      tb._wired = true;
+      tb.addEventListener("mousedown", (e) => {
+        if (e.target.closest("button")) e.preventDefault();
+      });
+    }
+  },
+
+  // 任意の contenteditable を「リッチ入力」として有効化する。
+  // ・貼り付けHTMLをサニタイズして挿入（インライン化・class除去）
+  // ・Tab/Shift+Tab でリストの階層を上下（ネスト）
+  // ・行頭「- 」「1. 」で自動リスト化
+  // onInput が渡されると、内容変更のたびに呼ぶ（プレビュー更新・自動保存用）。
+  wireEditable(el, onInput) {
+    if (!el || el._wired) return;
+    el._wired = true;
+    el._onInput = onInput || null;
+    if (!this._activeEditable) this._activeEditable = el;
+
+    el.addEventListener("focus", () => { this._activeEditable = el; });
+
+    el.addEventListener("paste", (e) => {
+      const cb = e.clipboardData;
+      if (!cb) return;
+      // コードブロック（<pre>）内：改行・空白を保ったプレーンテキストとして挿入（リスト化しない）
+      if (this._selectionInPre()) {
+        e.preventDefault();
+        document.execCommand("insertText", false, cb.getData("text/plain"));
+        if (el._onInput) el._onInput();
+        return;
+      }
+      const html = cb.getData("text/html");
+      if (html) {
+        e.preventDefault();
+        document.execCommand("insertHTML", false, sanitizeHtml(html));
+        if (el._onInput) el._onInput();
+        return;
+      }
+      // プレーンテキストのみ：改行を <br> にして挿入（リスト内で勝手に箇条書きが増えるのを防ぐ）
+      const text = cb.getData("text/plain");
+      if (text != null && text !== "") {
+        e.preventDefault();
+        document.execCommand("insertHTML", false, escapeHtml(text).replace(/\n/g, "<br>"));
+        if (el._onInput) el._onInput();
+      }
+    });
+
+    el.addEventListener("keydown", (e) => {
+      const inPre = this._selectionInPre();
+      if (e.key === "Tab") {
+        e.preventDefault();
+        if (inPre) document.execCommand("insertText", false, "  ");      // コードブロック内は字下げ
+        else document.execCommand(e.shiftKey ? "outdent" : "indent");    // 通常はリストの階層変更
+        if (el._onInput) el._onInput();
+      } else if (e.key === "Enter" && inPre) {
+        // コードブロック内では改行のみ（箇条書き化・ブロック分割を防ぐ）
+        e.preventDefault();
+        document.execCommand("insertText", false, "\n");
+        if (el._onInput) el._onInput();
+      }
+    });
+
+    el.addEventListener("input", (e) => {
+      if ((!e.inputType || e.inputType.indexOf("insert") === 0) && !this._selectionInPre()) {
+        this._maybeAutoList(el);
+      }
+      if (el._onInput) el._onInput();
+    });
+  },
+
+  // 現在のキャレット／選択が <pre>（コードブロック）内にあるか
+  _selectionInPre() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return false;
+    let n = sel.getRangeAt(0).startContainer;
+    while (n) { if (n.nodeType === 1 && n.tagName === "PRE") return true; n = n.parentNode; }
+    return false;
+  },
+
+  // カーソル位置にコードブロック（<pre>）を挿入。リスト項目の中に入れても階層は保たれる。
+  insertCodeBlock() {
+    const el = this._targetEditable();
+    if (!el) return;
+    el.focus();
+    const style = "background:#f5f5f5;padding:10px;border:1px solid #e0e0e0;border-radius:4px;" +
+      "font-family:ui-monospace,Consolas,monospace;white-space:pre-wrap;";
+    const pre = document.createElement("pre");
+    pre.setAttribute("style", style);
+    pre.appendChild(document.createTextNode("\n"));
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(pre);
+      const r = document.createRange();
+      r.setStart(pre.firstChild, 0); r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+    } else {
+      el.appendChild(pre);
+    }
+    if (el._onInput) el._onInput();
+  },
+
+  _maybeAutoList(body) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) return;
+    // すでにリスト項目内なら何もしない
+    let el = node.parentElement;
+    while (el && el !== body) { if (el.tagName === "LI") return; el = el.parentElement; }
+    const caret = range.startOffset;
+    const before = node.textContent.slice(0, caret);
+    const mUl = /^([-*])\s$/.exec(before);
+    const mOl = /^(\d+[.)])\s$/.exec(before);
+    if (!mUl && !mOl) return;
+    // マーカー部分を削除してからリスト化
+    node.textContent = node.textContent.slice(caret);
+    const r = document.createRange();
+    r.setStart(node, 0); r.collapse(true);
+    sel.removeAllRanges(); sel.addRange(r);
+    document.execCommand(mOl ? "insertOrderedList" : "insertUnorderedList");
+  },
+
+  // ツールバー操作は「いま編集中の欄（_activeEditable）」に対して効く
+  _targetEditable() {
+    return this._activeEditable || document.getElementById("ed-body");
+  },
+
+  fmt(command, value) {
+    const el = this._targetEditable();
+    if (el) el.focus();
+    try { document.execCommand(command, false, value || null); }
+    catch (e) { console.error("fmt failed", command, e); }
+    if (el && el._onInput) el._onInput();
+  },
+
+  makeLink() {
+    const url = prompt("リンク先URLを入力:", "https://");
+    if (!url) return;
+    this.fmt("createLink", url);
+  },
+
+  clearFormat() {
+    const el = this._targetEditable();
+    if (el) el.focus();
+    document.execCommand("removeFormat");
+    document.execCommand("formatBlock", false, "P");
+    if (el && el._onInput) el._onInput();
+  },
+
+  // ============================================================
+  // テンプレート編集画面
+  // ============================================================
+  renderTemplateList() {
+    const ul = document.getElementById("tpl-list");
+    if (!ul) return;
+    const templates = this.mergedTemplates();
+    ul.innerHTML = "";
+    if (templates.length === 0) {
+      ul.innerHTML = '<li class="hint">テンプレートがありません。</li>';
+      return;
+    }
+    templates.forEach(t => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="name">${escapeHtml(t.name)}</span>`;
+      const btn = document.createElement("button");
+      btn.className = "btn small secondary";
+      btn.textContent = "編集";
+      btn.onclick = () => this.editTemplate(t.id);
+      li.appendChild(btn);
+      ul.appendChild(li);
+    });
+  },
+
+  showEditorForm(show) {
+    document.getElementById("editor-form").classList.toggle("hidden", !show);
+    document.getElementById("editor-empty").classList.toggle("hidden", show);
+  },
+
+  newTemplate() {
+    const now = Date.now();
+    const t = {
+      id: uid("tpl"), name: "新規テンプレート", bodyHtml: "", variables: [],
+      origin: "personal", createdAt: now, updatedAt: now,
+    };
+    this.personal.push(t);
+    this.editingId = t.id;
+    this.renderTemplateList();
+    this.fillEditor(this.getTemplate(t.id));
+  },
+
+  editTemplate(id) {
+    const t = this.getTemplate(id);
+    if (!t) return;
+    this.editingId = id;
+    this.fillEditor(t);
+  },
+
+  fillEditor(t) {
+    this.showEditorForm(true);
+    this.setupEditor();
+    document.getElementById("ed-name").value = t.name || "";
+    document.getElementById("ed-body").innerHTML = t.bodyHtml || "";
+    this._editorVars = JSON.parse(JSON.stringify(t.variables || []));
+    this.renderEditorVars();
+  },
+
+  renderEditorVars() {
+    const tbody = document.getElementById("ed-vars");
+    tbody.innerHTML = "";
+    (this._editorVars || []).forEach((v, i) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><input type="text" value="${escapeHtml(v.key)}" data-i="${i}" data-f="key"></td>
+        <td><input type="text" value="${escapeHtml(v.label || "")}" data-i="${i}" data-f="label"></td>
+        <td>
+          <select data-i="${i}" data-f="type">
+            <option value="text"${v.type === "text" || !v.type ? " selected" : ""}>text</option>
+            <option value="textarea"${v.type === "textarea" ? " selected" : ""}>textarea</option>
+            <option value="date"${v.type === "date" ? " selected" : ""}>date</option>
+            <option value="codeblock"${v.type === "codeblock" ? " selected" : ""}>codeblock</option>
+            <option value="rich"${v.type === "rich" ? " selected" : ""}>rich</option>
+          </select>
+        </td>
+        <td><input type="text" value="${escapeHtml(v.defaultValue || "")}" data-i="${i}" data-f="defaultValue"></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll("[data-i]").forEach(el => {
+      const apply = () => { this._editorVars[+el.dataset.i][el.dataset.f] = el.value; };
+      el.addEventListener("input", apply);
+      el.addEventListener("change", apply);
+    });
+  },
+
+  extractVariables() {
+    const body = document.getElementById("ed-body").innerHTML;
+    const keys = [];
+    let m;
+    PLACEHOLDER_RE.lastIndex = 0;
+    while ((m = PLACEHOLDER_RE.exec(body)) !== null) {
+      if (!keys.includes(m[1])) keys.push(m[1]);
+    }
+    const existing = {};
+    (this._editorVars || []).forEach(v => { existing[v.key] = v; });
+    this._editorVars = keys.map(k => existing[k] || { key: k, label: k, type: "text", defaultValue: "" });
+    this.renderEditorVars();
+    toast(keys.length + " 個の変数を検出しました", "ok");
+  },
+
+  variableizeSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+      toast("本文内で変数化したいテキストを選択してください", "err");
+      return;
+    }
+    const bodyEl = document.getElementById("ed-body");
+    const range = sel.getRangeAt(0);
+    if (!bodyEl.contains(range.commonAncestorContainer)) {
+      toast("本文領域内を選択してください", "err");
+      return;
+    }
+    const key = prompt("変数キー（例: customer_name）を入力:", "");
+    if (!key) return;
+    const clean = key.trim().replace(/[^\w-]/g, "_");
+    range.deleteContents();
+    range.insertNode(document.createTextNode("{{" + clean + "}}"));
+    sel.removeAllRanges();
+    this.extractVariables();
+  },
+
+  loadHtmlFile(ev) {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      document.getElementById("ed-body").innerHTML = sanitizeHtml(reader.result);
+      this.extractVariables();
+      toast("HTMLを読み込みました", "ok");
+    };
+    reader.readAsText(file);
+    ev.target.value = "";
+  },
+
+  async saveTemplate() {
+    try {
+      await this._saveTemplate();
+    } catch (e) {
+      console.error("saveTemplate failed", e);
+      toast("保存に失敗しました: " + (e && e.message ? e.message : e), "err");
+    }
+  },
+
+  async _saveTemplate() {
+    if (!this.editingId) { toast("編集中のテンプレートがありません", "err"); return; }
+    const merged = this.getTemplate(this.editingId);
+    if (!merged) { toast("テンプレートが見つかりません", "err"); return; }
+    const name = document.getElementById("ed-name").value.trim() || "（無題）";
+    const bodyHtml = sanitizeHtml(document.getElementById("ed-body").innerHTML);
+    // 変数キーの空・重複を除外
+    const seen = new Set();
+    const variables = (this._editorVars || [])
+      .filter(v => v.key && v.key.trim())
+      .filter(v => { if (seen.has(v.key)) return false; seen.add(v.key); return true; })
+      .map(v => ({ key: v.key.trim(), label: v.label || v.key, type: v.type || "text", defaultValue: v.defaultValue || "" }));
+
+    const now = Date.now();
+    const idx = this.personal.findIndex(p => p.id === merged.id);
+    const obj = {
+      id: merged.id, name, bodyHtml, variables, origin: "personal",
+      createdAt: merged.createdAt || now, updatedAt: now,
+    };
+    if (idx >= 0) this.personal[idx] = obj; else this.personal.push(obj);
+    await Api.put("personal", this.personal);
+
+    this.renderTemplateList();
+    this.fillEditor(this.getTemplate(this.editingId));
+    this.renderActiveTab();
+    toast("テンプレートを保存しました", "ok");
+  },
+
+  async deleteTemplate() {
+    if (!this.editingId) return;
+    const t = this.getTemplate(this.editingId);
+    if (!t) return;
+    if (!confirm("テンプレート「" + (t.name || "") + "」を削除しますか？")) return;
+    const id = this.editingId;
+    this.personal = this.personal.filter(p => p.id !== id);
+    await Api.put("personal", this.personal);
+    this.editingId = null;
+    this.showEditorForm(false);
+    this.renderTemplateList();
+    this.renderActiveTab();
+    toast("削除しました", "ok");
+  },
+
+  // ---------- エクスポート / インポート ----------
+  exportTemplates() {
+    const payload = {
+      _format: "rich-template-tool",
+      _version: 1,
+      exportedAt: new Date().toISOString(),
+      personal: this.personal,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "templates-export.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("エクスポートしました", "ok");
+  },
+
+  importTemplates(ev) {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const data = JSON.parse(reader.result);
+        let imported = [];
+        if (Array.isArray(data)) {
+          imported = data;
+        } else {
+          if (Array.isArray(data.shared)) imported = imported.concat(data.shared);
+          if (Array.isArray(data.personal)) imported = imported.concat(data.personal);
+        }
+        if (imported.length === 0) { toast("取り込めるテンプレートがありません", "err"); return; }
+        // すべて個人テンプレートとして取り込む（新IDを採番し衝突回避）
+        let count = 0;
+        imported.forEach(t => {
+          if (!t || !t.bodyHtml) return;
+          this.personal.push({
+            id: uid("tpl"),
+            name: (t.name || "インポート") + "（取込）",
+            bodyHtml: t.bodyHtml,
+            variables: Array.isArray(t.variables) ? t.variables : [],
+            origin: "personal",
+            createdAt: Date.now(), updatedAt: Date.now(),
+          });
+          count++;
+        });
+        await Api.put("personal", this.personal);
+        this.renderTemplateList();
+        this.renderActiveTab();
+        toast(count + " 件のテンプレートを取り込みました", "ok");
+      } catch (e) {
+        toast("インポートに失敗しました（JSON不正）", "err");
+        console.error(e);
+      }
+    };
+    reader.readAsText(file);
+    ev.target.value = "";
+  },
+};
+
+// 握りつぶされがちな例外を可視化（保存などの無反応を防ぐ）
+window.addEventListener("error", (e) => {
+  try { toast("エラー: " + (e.message || e.error), "err"); } catch (_) {}
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e.reason;
+  try { toast("エラー: " + (r && r.message ? r.message : r), "err"); } catch (_) {}
+});
+
+window.addEventListener("DOMContentLoaded", () => App.init());
+</script>
+</body>
+</html>
+    

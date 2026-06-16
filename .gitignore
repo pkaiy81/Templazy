@@ -1,0 +1,13 @@
+# Rust / Tauri ビルド成果物
+src-tauri/target/
+
+# Tauri が自動生成（スキーマ等）
+src-tauri/gen/
+
+# OS
+.DS_Store
+Thumbs.db
+
+PLAN.md
+
+# 注意: src-tauri/seed_templates.json はコンパイルに必須のため追跡対象。
