@@ -1,90 +1,89 @@
-# Templazy Desktop (Tauri v2)
+# Templazy
 
-現行の「Python + ブラウザ」版を、軽量ネイティブアプリ化したもの。
-UI（`src/index.html`）は既存のバニラJSを流用し、データ保存だけ Rust 側コマンドに置き換えている。
+**面倒な定型文を、ラクに。**
 
-## 構成
-```
-templazy-desktop/
-├── src/index.html          # フロントエンド（既存UI流用。Apiレイヤのみ Tauri invoke 化）
-└── src-tauri/
-    ├── Cargo.toml
-    ├── tauri.conf.json     # frontendDist=../src（Node/devサーバ不要）
-    ├── capabilities/default.json
-    ├── icons/              # アプリアイコン（make_icons.py から生成済み）
-    ├── seed_templates.json # 初回起動時に取り込む初期テンプレ（既定は空 []）
-    └── src/main.rs         # load/save コマンド + seed初期化
-```
+よく使うリッチテキスト（書式付き）のテンプレートを登録しておき、**変わる部分だけ入力 → ワンクリックでコピー**して、メールや対応ツールにそのまま貼り付けられるデスクトップアプリです。軽量で、起動も速く、ブラウザのタブも使いません。
 
-## 前提ツール（ビルドする人のみ）
-- **Rust / cargo**（導入済み）
-- **Tauri CLI**：`cargo install tauri-cli --version "^2"`（初回のみ・コンパイルに少し時間）
-- 各OSの WebView ランタイム
-  - Windows: **WebView2**（多くのPCに既存。無ければMSのランタイムを導入）
-  - macOS: WKWebView（OS標準・追加不要）
-  - Linux: `libwebkit2gtk-4.1-dev` 等（開発時）
+---
 
-### 社内 Artifactory 経由（cargo）
-`~/.cargo/config.toml` に社内ミラーを設定：
-```toml
-[source.crates-io]
-replace-with = "artifactory"
+## 主な機能
+- 📝 **テンプレート登録**：見出し・箇条書き・表・コードブロックなど、**書式そのまま**保存
+- ✏️ **可変部分だけ入力**：`{{name}}` のような差し込み欄に入力するだけ
+- 📋 **リッチ／プレーンでコピー**：貼り付け先で書式を保ったまま貼れる（プレーンも選べる）
+- 🗂 **タブで並行作業**：複数の案件を同時に開ける
+- 🔁 **JSONインポート / エクスポート**：テンプレ集の取り込み・バックアップ・共有
 
-[source.artifactory]
-registry = "sparse+https://<host>/artifactory/api/cargo/<repo>/index/"
-```
-※ 本構成は **Node不要**なので npm レジストリの問題は発生しない。
+---
 
-## 開発・ビルド
+## インストール
+
+> 社内配布の未署名アプリのため、初回は警告が出ます（下記の手順で開けます）。
+
+### Windows
+1. `Templazy_x.x.x_x64-setup.exe`（または `.msi`）をダブルクリック
+2. 「WindowsによってPCが保護されました」と出たら **「詳細情報」→「実行」**
+3. 案内に従ってインストール → スタートメニュー／タスクバーから起動・ピン留め可
+
+### macOS
+1. `.dmg` を開き、**Templazy を Applications フォルダにドラッグ**
+   - `.dmg` は **Intel / Apple Silicon 両対応（ユニバーサル）**。1つでどのMacでも動きます
+2. 初回は「開発元を確認できません」と出るので、**Templazy を右クリック →「開く」→「開く」**
+3. 以降は Launchpad／Dock から起動・常駐可
+
+### Linux（Debian / Ubuntu）
 ```bash
-cd src-tauri
-cargo tauri dev      # 開発起動（ホットでウィンドウが立つ）
-cargo tauri build    # 配布物を生成
+sudo apt install ./Templazy_x.x.x_amd64.deb
 ```
-生成物：
-- Windows: `.msi` / NSIS `.exe`（`src-tauri/target/release/bundle/…`）
-- macOS: `.app` / `.dmg`（**.app なので Finder/Dock にアイコンが出る**）
-- Linux: `.deb` / AppImage
+アプリ一覧から起動できます。
 
-> クロスビルドは不可（Tauriも同様）。**mac版はMacで、win版はWindowsで**ビルドする。
+---
 
-## 初期テンプレート（seed）
-`src-tauri/seed_templates.json` に**テンプレートの配列(JSON)**を入れてビルドすると、
-利用者の初回起動時に取り込まれる（2回目以降や既存ユーザーには影響しない）。
-- 既定は `[]`（空）。
-- 社内向け内容を載せたくない場合は、ビルド直前に中身を差し替え、リポジトリにはコミットしない運用に。
-- 旧版の `data/personal.json` をそのまま貼り付ければ移行できる。
+## 使い方
 
-## アイコン
-`../make_icons.py` の描画を流用して `src-tauri/icons/` に生成済み
-（`32x32.png` / `128x128.png` / `128x128@2x.png` / `icon.icns` / `icon.ico`）。
-デザイン変更時は `make_icons.py` を編集 → アイコンを再生成。
+### 1. テンプレートを用意する
+- 「**テンプレート編集**」→「**＋ 新規**」
+  - 本文を貼り付け／入力し、変わる部分を選んで「**選択を変数化**」→ `{{key}}` にする
+  - 種類は text（1行）/ textarea（複数行）/ date（日付）/ codeblock（ログ等）/ rich（自由入力）から選べます
+- すでにテンプレ集（JSON）があるなら「**JSONインポート**」で一括取り込み
 
-## データ保存先（OSユーザーごとに分離）
-- Windows: `%APPDATA%\jp.templazy.app\`
-- macOS: `~/Library/Application Support/jp.templazy.app/`
-- Linux: `~/.local/share/jp.templazy.app/`
-ファイル：`personal.json`（テンプレ）/ `tabs.json`（作業状態）。書き込みはアトミック。
+### 2. 作成して貼り付ける
+1. 「**作成**」でテンプレートを選ぶ → 入力欄に値を入れる
+2. 右の**プレビュー**で確認
+3. 「**リッチでコピー**」→ メール／対応ツールに貼り付け（書式が保たれます）
+4. 複数案件は上部の**タブ（＋）**で並行作業。タブ名は**ダブルクリック**で変更
 
-## 状態 / TODO
-- [x] 雛形（Rust load/save + seed、tauri.conf、capabilities、アイコン）
-- [x] 既存UI流用・Apiレイヤを invoke 化
-- [x] 依存解決（Cargo.lock）確認済み
-- [x] **起動確認（Linux / WebKitGTK）**：`cargo build` → 起動 → ウィンドウ表示 → クリーン終了
-- [x] **データ層動作確認**：テンプレ作成→`personal.json`/`tabs.json` に保存（ユーザー別領域・アトミック）
-- [x] **リッチコピー → 貼り付けOK（Linux / WebKitGTK で確認）** ← 移行の最大リスクをクリア
-- [ ] Windows(WebView2) / macOS(WKWebView) でのリッチコピー実機確認
-  - WebView2(Win) は Chromium ベースで効く可能性大。
-  - WKWebView(mac) はクリップボード制約が出ることがあるため要確認。不可なら Tauri clipboard プラグイン or Rust 実装にフォールバック。
-- [x] **パッケージング検証（Linux）**：`cargo tauri build --bundles deb` → `Templazy_0.1.0_amd64.deb`（インストール ~3.5MB、アイコン＋.desktop 同梱）
-- [ ] Windows で `cargo tauri build` → `.msi`/`.exe`（ビルド機で実施）
-- [ ] macOS で `cargo tauri build` → `.app`/`.dmg`（ビルド機で実施）
-- [ ] 受け入れ条件（PLAN.md 第4章）を順に検証
+### ヒント
+- リッチ入力欄では **太字・箇条書き**などをツールバーで編集。行頭「- 」「1. 」で箇条書き、**Tab で階層化**
+- ログは「**`</>` ログ**」ボタンでコードブロックに（改行・字下げが保たれます）
 
-### Linux配布物の作り方（確認済み手順）
-```bash
-cargo install tauri-cli --version "^2"      # 初回のみ
-cd src-tauri
-cargo tauri build --bundles deb             # → target/release/bundle/deb/*.deb
-```
-インストール: `sudo apt install ./Templazy_0.1.0_amd64.deb`（依存 webkit2gtk/gtk は apt が解決）
+---
+
+## データの保存場所
+入力したテンプレや作業状態は、**Windowsユーザーごと**に次の場所へ保存されます（バックアップはこのフォルダをコピー）：
+
+| OS | 保存先 |
+|---|---|
+| Windows | `%APPDATA%\jp.templazy.app\` |
+| macOS | `~/Library/Application Support/jp.templazy.app/` |
+| Linux | `~/.local/share/jp.templazy.app/` |
+
+- `personal.json`（テンプレ）/ `tabs.json`（作業状態）
+- アンインストールしてもこのデータは残ることが多く、再インストールで復元できます
+
+---
+
+## よくある質問
+
+**Q. 他のPCや旧バージョンのテンプレを移したい**
+A. 「テンプレート編集」→「**JSONインポート**」で取り込むのが簡単です。または上記フォルダの `personal.json` を置き換えてもOK。
+
+**Q. インストール時に警告が出る／開けない**
+A. 未署名アプリのためです。Windows は「詳細情報→実行」、Mac は「右クリック→開く」で起動できます。
+
+**Q. コピーしても書式が貼り付けられない**
+A. 「リッチでコピー」を使ってください（「プレーンでコピー」は書式なし）。貼り付け先が書式に対応している必要があります。
+
+---
+
+## 開発・ビルドについて
+ソースからのビルドや配布物の作り方は **[BUILD.md](BUILD.md)** を参照してください。
