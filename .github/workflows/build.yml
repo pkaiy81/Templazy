@@ -71,5 +71,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: templazy-${{ matrix.name }}
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/**
+          # bundle/** = インストーラ（msi/nsis/dmg/deb）
+          # 末尾2行 = ポータブル単体実行ファイル（Windows: templazy.exe / その他は無視される）
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/**
+            src-tauri/target/${{ matrix.target }}/release/templazy.exe
           if-no-files-found: error
