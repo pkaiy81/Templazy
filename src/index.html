@@ -232,6 +232,7 @@
   <div class="viewtabs">
     <button id="nav-create" class="active" onclick="App.showView('create')">作成</button>
     <button id="nav-editor" onclick="App.showView('editor')">テンプレート編集</button>
+    <button id="nav-mask" onclick="App.showView('mask')">マスク</button>
   </div>
 </header>
 
@@ -327,6 +328,70 @@
         </div>
         <div class="panel" id="editor-empty">
           <p class="hint">左の一覧からテンプレートを選ぶか「＋ 新規」で作成してください。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== マスク画面 ===================== -->
+  <section id="view-mask" class="hidden">
+    <div class="row">
+      <div class="col">
+        <div class="panel">
+          <label class="field">元のログ（ここに貼り付け）</label>
+          <textarea id="mask-input" class="codeblock" style="min-height:300px;"
+            placeholder="ホスト名・IP・メール等を含むログを貼り付けてください"></textarea>
+
+          <div style="margin-top:12px;">
+            <label class="field">マスクする種類</label>
+            <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:14px;">
+              <label><input type="checkbox" id="mask-ipv4" checked> IPv4</label>
+              <label><input type="checkbox" id="mask-ipv6" checked> IPv6</label>
+              <label><input type="checkbox" id="mask-host" checked> ホスト名/FQDN</label>
+              <label><input type="checkbox" id="mask-email" checked> メール</label>
+              <label><input type="checkbox" id="mask-mac" checked> MACアドレス</label>
+            </div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <label class="field">カスタム語 / パターン（1行に1つ）</label>
+            <textarea id="mask-custom" style="min-height:130px;font-size:13px;line-height:1.5;"
+              placeholder="例:&#10;ACME&#10;DS = /volumes/([^/\s]+)&#10;VM = ([\w.\-]+)\.cfg&#10;NODE = node-([0-9]+)&#10;NAME = name=([\w.\-]+)">
+            <p class="hint">
+              ・ふつうの語 → その語をそのままマスク（<code>&lt;DATA_1&gt;</code>）<br>
+              ・<code>LABEL = 正規表現</code>（LABELは大文字）→ 正規表現の <strong>丸カッコ () で囲った部分</strong>を <code>&lt;LABEL_1&gt;</code> でマスク（例 <code>&lt;DS_1&gt;</code> <code>&lt;VM_1&gt;</code>）<br>
+              ・検出した値は<strong>ログ全体</strong>でマスクされ、同じ値は同じトークンになります。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="panel">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <label class="field" style="flex:1;margin:0;">マスク結果</label>
+            <button class="btn small" onclick="App.copyMasked()">マスクしてコピー</button>
+          </div>
+          <textarea id="mask-output" class="codeblock" style="min-height:300px;margin-top:6px;" readonly></textarea>
+          <p class="hint">同じ値は同じトークン（例 <code>&lt;IP_1&gt;</code>）に置換されます。AIにはこのマスク済みテキストを渡してください。</p>
+          <details style="margin-top:6px;">
+            <summary style="cursor:pointer;font-size:13px;">対応表（<span id="mask-count">0</span> 件）— 控えとして保管。共有しないでください</summary>
+            <table class="vars" id="mask-table">
+              <thead><tr><th style="width:30%;">トークン</th><th>元の値</th><th style="width:20%;">種類</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </details>
+        </div>
+
+        <div class="panel">
+          <label class="field">アンマスク（AIの回答などを貼ると、上のマスクを元の値に戻します）</label>
+          <textarea id="unmask-input" style="min-height:100px;"
+            placeholder="&lt;IP_1&gt; などのトークンを含む文章を貼り付け"></textarea>
+          <div style="display:flex;gap:8px;margin:8px 0;">
+            <button class="btn small secondary" onclick="App.doUnmask()">元に戻す</button>
+            <button class="btn small secondary" onclick="App.copyUnmasked()">復元結果をコピー</button>
+          </div>
+          <textarea id="unmask-output" style="min-height:100px;" readonly></textarea>
         </div>
       </div>
     </div>
@@ -571,6 +636,133 @@ async function copyPlain(plain) {
 }
 
 // ============================================================
+// ログのマスク（顧客データ：IP/ホスト名/メール/MAC を伏せ字化）
+// ============================================================
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// 各種パターン
+const RE_IPV4 = /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g;
+// 前後が単語/コロンでない時だけマッチ（コード中の std::collections の "::" 等を誤検出しない）。
+// 完全一致を優先する順序（末尾が "::" の形は最後）。
+const RE_IPV6 = new RegExp(
+  "(?<![\\w:])(?:" +
+  "(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}" +
+  "|(?:[0-9A-Fa-f]{1,4}:){1,2}(?::[0-9A-Fa-f]{1,4}){1,5}" +
+  "|(?:[0-9A-Fa-f]{1,4}:){1,3}(?::[0-9A-Fa-f]{1,4}){1,4}" +
+  "|(?:[0-9A-Fa-f]{1,4}:){1,4}(?::[0-9A-Fa-f]{1,4}){1,3}" +
+  "|(?:[0-9A-Fa-f]{1,4}:){1,5}(?::[0-9A-Fa-f]{1,4}){1,2}" +
+  "|[0-9A-Fa-f]{1,4}:(?::[0-9A-Fa-f]{1,4}){1,6}" +
+  "|(?:[0-9A-Fa-f]{1,4}:){1,6}:[0-9A-Fa-f]{1,4}" +
+  "|::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}" +
+  "|(?:[0-9A-Fa-f]{1,4}:){1,7}:" +
+  ")(?![\\w:])", "g");
+const RE_MAC = /\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b/g;
+const RE_EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+const RE_HOST = /\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}\b/g;
+
+// ホスト名は「末尾が実在TLDのとき」だけマスクする（許可リスト方式）。
+// これにより JFR.start / om.jfr / config.json のような「ドット付きだが非ホスト名」を誤マスクしない。
+// 社内専用TLD（例: .corp 等）でマスクしたい場合はカスタム語に登録するか、このリストに追加。
+const HOST_TLD = new Set([
+  // gTLD
+  "com","net","org","edu","gov","mil","int","info","biz","name","pro","mobi","aero","coop","museum",
+  // 新gTLD（よく使われるもの）
+  "app","dev","io","cloud","tech","online","site","xyz","store","shop","blog","wiki","email","tv","cc",
+  "ai","co","page","work","group","systems","network","digital","media","live","life","world","company",
+  // ccTLD（主要）
+  "jp","us","uk","gb","de","fr","ca","au","in","ru","br","it","es","nl","se","no","fi","dk","pl","ch",
+  "at","be","cz","pt","gr","hu","ie","il","kr","sg","my","th","tw","hk","id","ph","vn","nz","za","mx",
+  "ar","cl","tr","ua","ro","sk","bg","hr","rs","lt","lv","ee","is","lu","sa","ae","qa","kw","cn","eu",
+  // 内部/特殊
+  "local","lan","corp","internal","intranet","intra","home","lab","localdomain","localhost",
+]);
+
+// text をマスクし、{ masked, entries:[{token,original,type}] } を返す。
+// 同じ値は同じトークンになる（AIが相関を保てる／復元できる）。
+function maskLog(text, opts) {
+  const map = new Map();      // type+値(小文字) -> token
+  const entries = [];
+  const counters = {};
+  const token = (original, prefix, type) => {
+    const key = type + "\u0000" + original.toLowerCase();
+    if (map.has(key)) return map.get(key);
+    counters[prefix] = (counters[prefix] || 0) + 1;
+    const t = "<" + prefix + "_" + counters[prefix] + ">";
+    map.set(key, t);
+    entries.push({ token: t, original, type });
+    return t;
+  };
+
+  let out = String(text == null ? "" : text);
+
+  // 構造のある値を先に丸ごとマスク（メール/MAC/IPv6/IPv4/ホスト名）。
+  // ※ メールやFQDNを断片化しないよう、カスタム語は最後に適用する。
+  // 1) メール（ドメインを含むので先に処理）
+  if (opts.email) out = out.replace(RE_EMAIL, m => token(m, "EMAIL", "email"));
+  // 2) MAC（IPv6より先。誤検出回避）
+  if (opts.mac) out = out.replace(RE_MAC, m => token(m, "MAC", "mac"));
+  // 3) IPv6
+  if (opts.ipv6) out = out.replace(RE_IPV6, m => token(m, "IP6", "ipv6"));
+  // 4) IPv4
+  if (opts.ipv4) out = out.replace(RE_IPV4, m => token(m, "IP", "ip"));
+  // 5) ホスト名/FQDN（末尾が実在TLDのときだけ。JFR.start や om.jfr 等の誤マスクを防ぐ）
+  if (opts.host) {
+    out = out.replace(RE_HOST, m => {
+      const tld = m.split(".").pop().toLowerCase();
+      if (!HOST_TLD.has(tld)) return m;
+      return token(m, "HOST", "host");
+    });
+  }
+  // 6) カスタム（最後に適用）。各行は次のどちらか：
+  //    - 「LABEL = 正規表現」(LABELは大文字) → 捕捉グループ(1)を <LABEL_n> でマスク
+  //    - それ以外の行 → その語をそのままマスク (<DATA_n>)
+  //    検出/指定した値は、ログ全体の他の場所でもマスクする（mask everywhere）。
+  const toMask = [];  // {value, prefix, type}
+  (opts.customTerms || []).forEach(line => {
+    const s = (line || "").trim();
+    if (!s) return;
+    const rm = /^([A-Z][A-Z0-9_]*)\s*=\s*(.+)$/.exec(s);
+    if (rm) {
+      // パターンルール（正規表現）
+      let re;
+      try { re = new RegExp(rm[2], "g"); } catch (e) { return; }  // 不正な正規表現は無視
+      let mm, guard = 0;
+      while ((mm = re.exec(out)) !== null && guard++ < 100000) {
+        const cap = (mm[1] !== undefined ? mm[1] : mm[0]);
+        if (cap && cap.length >= 2) toMask.push({ value: cap, prefix: rm[1], type: rm[1] });
+        if (mm.index === re.lastIndex) re.lastIndex++;  // 長さ0マッチの無限ループ回避
+      }
+    } else if (s.length >= 2) {
+      // リテラル語
+      toMask.push({ value: s, prefix: "DATA", type: "custom" });
+    }
+  });
+  // 重複除去（大小無視）し、値が長いものから置換（短い名前が長い名前の一部を壊さないように）
+  const seen = new Set();
+  toMask
+    .filter(it => { const k = it.value.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => b.value.length - a.value.length)
+    .forEach(it => {
+      const tok = token(it.value, it.prefix, it.type);
+      out = out.replace(new RegExp(escapeRegExp(it.value), "gi"), tok);
+    });
+  return { masked: out, entries };
+}
+
+// マスク済みトークンを元の値に戻す
+function unmaskLog(text, entries) {
+  let out = String(text == null ? "" : text);
+  (entries || []).forEach(e => { out = out.split(e.token).join(e.original); });
+  return out;
+}
+
+const MASK_TYPE_LABEL = {
+  ip: "IPv4", ipv6: "IPv6", host: "ホスト名", email: "メール", mac: "MAC", custom: "カスタム",
+};
+
+// ============================================================
 // アプリ本体
 // ============================================================
 const App = {
@@ -621,10 +813,104 @@ const App = {
     this.currentView = name;
     document.getElementById("view-create").classList.toggle("hidden", name !== "create");
     document.getElementById("view-editor").classList.toggle("hidden", name !== "editor");
+    document.getElementById("view-mask").classList.toggle("hidden", name !== "mask");
     document.getElementById("nav-create").classList.toggle("active", name === "create");
     document.getElementById("nav-editor").classList.toggle("active", name === "editor");
+    document.getElementById("nav-mask").classList.toggle("active", name === "mask");
     if (name === "editor") this.renderTemplateList();
     if (name === "create") { this.renderTabs(); this.renderActiveTab(); }
+    if (name === "mask") this.setupMask();
+  },
+
+  // ============================================================
+  // マスク画面
+  // ============================================================
+  _maskEntries: [],
+  setupMask() {
+    const ids = ["mask-input", "mask-custom", "mask-ipv4", "mask-ipv6", "mask-host", "mask-email", "mask-mac"];
+    const root = document.getElementById("mask-input");
+    if (!root._wired) {
+      root._wired = true;
+      this._loadMaskSettings();
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        const ev = el.type === "checkbox" ? "change" : "input";
+        el.addEventListener(ev, () => { this.runMask(); this._saveMaskSettings(); });
+      });
+    }
+    this.runMask();
+  },
+
+  _maskOpts() {
+    return {
+      ipv4: document.getElementById("mask-ipv4").checked,
+      ipv6: document.getElementById("mask-ipv6").checked,
+      host: document.getElementById("mask-host").checked,
+      email: document.getElementById("mask-email").checked,
+      mac: document.getElementById("mask-mac").checked,
+      customTerms: document.getElementById("mask-custom").value.split("\n"),
+    };
+  },
+
+  runMask() {
+    const text = document.getElementById("mask-input").value;
+    const { masked, entries } = maskLog(text, this._maskOpts());
+    this._maskEntries = entries;
+    document.getElementById("mask-output").value = masked;
+    document.getElementById("mask-count").textContent = entries.length;
+    const tbody = document.querySelector("#mask-table tbody");
+    tbody.innerHTML = "";
+    entries.forEach(e => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = "<td><code>" + escapeHtml(e.token) + "</code></td>"
+        + "<td>" + escapeHtml(e.original) + "</td>"
+        + "<td>" + escapeHtml(MASK_TYPE_LABEL[e.type] || e.type) + "</td>";
+      tbody.appendChild(tr);
+    });
+  },
+
+  async copyMasked() {
+    const v = document.getElementById("mask-output").value;
+    if (!v) { toast("マスク対象がありません", "err"); return; }
+    const ok = await copyPlain(v);
+    toast(ok ? "マスク済みテキストをコピーしました" : "コピーに失敗しました", ok ? "ok" : "err");
+  },
+
+  doUnmask() {
+    const text = document.getElementById("unmask-input").value;
+    document.getElementById("unmask-output").value = unmaskLog(text, this._maskEntries);
+  },
+
+  async copyUnmasked() {
+    const v = document.getElementById("unmask-output").value;
+    if (!v) { toast("復元結果がありません", "err"); return; }
+    const ok = await copyPlain(v);
+    toast(ok ? "復元結果をコピーしました" : "コピーに失敗しました", ok ? "ok" : "err");
+  },
+
+  _saveMaskSettings() {
+    try {
+      const s = {
+        ipv4: document.getElementById("mask-ipv4").checked,
+        ipv6: document.getElementById("mask-ipv6").checked,
+        host: document.getElementById("mask-host").checked,
+        email: document.getElementById("mask-email").checked,
+        mac: document.getElementById("mask-mac").checked,
+        custom: document.getElementById("mask-custom").value,
+      };
+      localStorage.setItem("templazy_mask_settings", JSON.stringify(s));
+    } catch (e) { /* localStorage不可でも無視 */ }
+  },
+
+  _loadMaskSettings() {
+    try {
+      const s = JSON.parse(localStorage.getItem("templazy_mask_settings") || "null");
+      if (!s) return;
+      ["ipv4", "ipv6", "host", "email", "mac"].forEach(k => {
+        if (typeof s[k] === "boolean") document.getElementById("mask-" + k).checked = s[k];
+      });
+      if (typeof s.custom === "string") document.getElementById("mask-custom").value = s.custom;
+    } catch (e) { /* 無視 */ }
   },
 
   // ============================================================

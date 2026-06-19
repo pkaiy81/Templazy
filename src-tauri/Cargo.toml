@@ -1,6 +1,6 @@
 [package]
 name = "templazy"
-version = "0.1.2"
+version = "0.1.3"
 description = "Templazy — 面倒な定型文を、ラクに。"
 edition = "2021"
 rust-version = "1.77"

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Templazy",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "identifier": "jp.templazy.app",
   "build": {
     "frontendDist": "../src"
