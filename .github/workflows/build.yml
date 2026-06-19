@@ -77,3 +77,30 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/**
             src-tauri/target/${{ matrix.target }}/release/templazy.exe
           if-no-files-found: error
+
+  # タグ push のときだけ：全OSの成果物を GitHub Release に添付する。
+  # → Release のダウンロードは（public リポジトリなら）ログイン不要で誰でも可能。
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # Release 作成に必要
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # ディレクトリ(.app等)は除き、配布する「ファイル」だけ添付する
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.msi
+            artifacts/**/*-setup.exe
+            artifacts/**/*.deb
+            artifacts/**/templazy.exe
+          draft: false
+          generate_release_notes: true
