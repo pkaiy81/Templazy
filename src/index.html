@@ -131,6 +131,17 @@
   textarea { resize: vertical; min-height: 140px; }
   textarea.codeblock { font-family: ui-monospace, Menlo, Consolas, monospace; white-space: pre; font-size: 15px; }
   .form-field { margin-bottom: 12px; }
+  /* マスクの「かんたんルール」行 */
+  .rule-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .rule-row input, .rule-row select { font-size: 13px; padding: 6px 8px; }
+  .rule-row .rule-label { flex: 0 0 110px; min-width: 0; }
+  .rule-row .rule-target { flex: 1 1 auto; min-width: 0; }
+  .rule-row .rule-mode { flex: 0 0 140px; }
+  .rule-row .rule-del {
+    flex: 0 0 auto; border: 1px solid var(--border); background: #fff; color: var(--muted);
+    border-radius: 5px; cursor: pointer; width: 30px; height: 32px; line-height: 1; font-size: 16px;
+  }
+  .rule-row .rule-del:hover { color: var(--danger); border-color: var(--danger); }
 
   .preview {
     border: 1px solid var(--border);
@@ -354,14 +365,22 @@
           </div>
 
           <div style="margin-top:12px;">
-            <label class="field">カスタム語 / パターン（1行に1つ）</label>
-            <textarea id="mask-custom" style="min-height:130px;font-size:13px;line-height:1.5;"
-              placeholder="例:&#10;ACME&#10;DS = /volumes/([^/\s]+)&#10;VM = ([\w.\-]+)\.cfg&#10;NODE = node-([0-9]+)&#10;NAME = name=([\w.\-]+)"></textarea>
+            <label class="field">マスクルール</label>
+            <div id="mask-rules"></div>
+            <button class="btn small secondary" type="button" onclick="App.addMaskRule()">＋ ルールを追加</button>
             <p class="hint">
-              ・ふつうの語 → その語をそのままマスク（<code>&lt;DATA_1&gt;</code>）<br>
-              ・<code>LABEL = 正規表現</code>（LABELは大文字）→ 正規表現の <strong>丸カッコ () で囲った部分</strong>を <code>&lt;LABEL_1&gt;</code> でマスク（例 <code>&lt;DS_1&gt;</code> <code>&lt;VM_1&gt;</code>）<br>
-              ・検出した値は<strong>ログ全体</strong>でマスクされ、同じ値は同じトークンになります。
+              ラベル＋対象を入れ、<strong>一致方法</strong>を選ぶだけ。一致した値を <code>&lt;ラベル_1&gt;</code> でマスクし、ログ全体に適用します。<br>
+              ・<strong>完全一致</strong>：その文字列だけ（例 <code>host01.example.com</code>）<br>
+              ・<strong>部分一致</strong>：含む箇所すべて（例 <code>example.com</code>）<br>
+              ・<strong>ワイルドカード</strong>：<code>*</code>＝任意の文字列 / <code>?</code>＝任意の1文字（例 <code>*.ts.vm</code>）<br>
+              ・<strong>正規表現</strong>：<code>( )</code> で囲った部分をマスク（例 <code>/volumes/([^/]+)</code> → スラッシュまでをマスク。囲わない場合は一致全体）
             </p>
+            <details style="margin-top:6px;">
+              <summary style="cursor:pointer;font-size:13px;color:var(--muted);">上級者向け：テキストで直接指定（語 / <code>LABEL = 正規表現</code>、1行に1つ）</summary>
+              <textarea id="mask-custom" style="min-height:90px;font-size:13px;line-height:1.5;margin-top:6px;"
+                placeholder="例:&#10;ACME&#10;DS = /volumes/([^/\s]+)&#10;NODE = node-([0-9]+)"></textarea>
+              <p class="hint">ふつうの語＝そのままマスク。<code>LABEL = 正規表現</code>（LABELは大文字）＝ () 部分を <code>&lt;LABEL_1&gt;</code> でマスク。</p>
+            </details>
           </div>
         </div>
       </div>
@@ -679,6 +698,32 @@ const HOST_TLD = new Set([
   "local","lan","corp","internal","intranet","intra","home","lab","localdomain","localhost",
 ]);
 
+// かんたんルールの「対象＋一致方法」を、捕捉用の正規表現に変換する。
+//   exact     完全一致（前後が単語境界。値全体をマスク）
+//   contains  部分一致（部分文字列。出現箇所をマスク）
+//   wildcard  * = 任意の文字列 / ? = 任意の1文字（値全体をマスク。例 *.ts.vm）
+//   regex     正規表現（() があればその部分、無ければ全体）
+function ruleToRegex(target, mode) {
+  if (mode === "regex") {
+    return { re: new RegExp(target, "g"), group: 1 };
+  }
+  if (mode === "contains") {
+    return { re: new RegExp(escapeRegExp(target), "g"), group: 0 };
+  }
+  let body;
+  if (mode === "wildcard") {
+    // * = 名前に使う文字の連続（英数・ドット・ハイフン・アンダースコア）、? = その1文字。
+    // 空白や =,(,) などは跨がない（VM=... の "VM=" まで巻き込まないように）。
+    body = target.split("").map(ch =>
+      ch === "*" ? "[\\w.\\-]*" : ch === "?" ? "[\\w.\\-]" : escapeRegExp(ch)
+    ).join("");
+  } else { // exact
+    body = escapeRegExp(target);
+  }
+  // 前後が単語/ドット/ハイフンでないときだけ＝トークン境界でマッチ
+  return { re: new RegExp("(?<![\\w.\\-])(?:" + body + ")(?![\\w.\\-])", "g"), group: 0 };
+}
+
 // text をマスクし、{ masked, entries:[{token,original,type}] } を返す。
 // 同じ値は同じトークンになる（AIが相関を保てる／復元できる）。
 function maskLog(text, opts) {
@@ -737,6 +782,21 @@ function maskLog(text, opts) {
     } else if (s.length >= 2) {
       // リテラル語
       toMask.push({ value: s, prefix: "DATA", type: "custom" });
+    }
+  });
+  // 6b) かんたんルール（ラベル＋対象＋一致方法）。textareaと同じ toMask に合流する。
+  (opts.rules || []).forEach(rule => {
+    const target = (rule.target || "").trim();
+    if (!target) return;
+    let label = (rule.label || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+    if (!label) label = "DATA";
+    let spec;
+    try { spec = ruleToRegex(target, rule.mode || "exact"); } catch (e) { return; }
+    let mm, guard = 0;
+    while ((mm = spec.re.exec(out)) !== null && guard++ < 100000) {
+      const cap = (spec.group === 1 && mm[1] !== undefined) ? mm[1] : mm[0];
+      if (cap && cap.length >= 2) toMask.push({ value: cap, prefix: label, type: label });
+      if (mm.index === spec.re.lastIndex) spec.re.lastIndex++;
     }
   });
   // 重複除去（大小無視）し、値が長いものから置換（短い名前が長い名前の一部を壊さないように）
@@ -826,12 +886,14 @@ const App = {
   // マスク画面
   // ============================================================
   _maskEntries: [],
+  _maskRules: [],
   setupMask() {
     const ids = ["mask-input", "mask-custom", "mask-ipv4", "mask-ipv6", "mask-host", "mask-email", "mask-mac"];
     const root = document.getElementById("mask-input");
     if (!root._wired) {
       root._wired = true;
       this._loadMaskSettings();
+      this.renderMaskRules();
       ids.forEach(id => {
         const el = document.getElementById(id);
         const ev = el.type === "checkbox" ? "change" : "input";
@@ -839,6 +901,58 @@ const App = {
       });
     }
     this.runMask();
+  },
+
+  // かんたんルール（ラベル＋対象＋一致方法）の行を描画
+  renderMaskRules() {
+    const root = document.getElementById("mask-rules");
+    if (!root) return;
+    root.innerHTML = "";
+    this._maskRules.forEach((rule, i) => {
+      const row = document.createElement("div");
+      row.className = "rule-row";
+
+      const label = document.createElement("input");
+      label.className = "rule-label"; label.placeholder = "ラベル"; label.value = rule.label || "";
+      label.oninput = () => { rule.label = label.value; this.runMask(); this._saveMaskSettings(); };
+
+      const target = document.createElement("input");
+      target.className = "rule-target"; target.value = rule.target || "";
+      target.oninput = () => { rule.target = target.value; this.runMask(); this._saveMaskSettings(); };
+
+      const mode = document.createElement("select");
+      mode.className = "rule-mode";
+      [["exact", "完全一致"], ["contains", "部分一致"], ["wildcard", "ワイルドカード"], ["regex", "正規表現"]]
+        .forEach(([v, t]) => {
+          const o = document.createElement("option");
+          o.value = v; o.textContent = t;
+          if ((rule.mode || "exact") === v) o.selected = true;
+          mode.appendChild(o);
+        });
+      // 一致方法に応じて「対象」欄の記入例を切り替える
+      const PH = {
+        exact: "例: host01.example.com",
+        contains: "例: example.com（含む箇所）",
+        wildcard: "例: *.ts.vm（*=任意 / ?=1文字）",
+        regex: "例: /volumes/([^/]+) （()内をマスク）",
+      };
+      const setPH = () => { target.placeholder = PH[mode.value] || "対象"; };
+      setPH();
+      mode.onchange = () => { rule.mode = mode.value; setPH(); this.runMask(); this._saveMaskSettings(); };
+
+      const del = document.createElement("button");
+      del.className = "rule-del"; del.type = "button"; del.textContent = "×"; del.title = "この行を削除";
+      del.onclick = () => { this._maskRules.splice(i, 1); this.renderMaskRules(); this.runMask(); this._saveMaskSettings(); };
+
+      row.append(label, target, mode, del);
+      root.appendChild(row);
+    });
+  },
+
+  addMaskRule() {
+    this._maskRules.push({ label: "", target: "", mode: "exact" });
+    this.renderMaskRules();
+    this._saveMaskSettings();
   },
 
   _maskOpts() {
@@ -849,6 +963,7 @@ const App = {
       email: document.getElementById("mask-email").checked,
       mac: document.getElementById("mask-mac").checked,
       customTerms: document.getElementById("mask-custom").value.split("\n"),
+      rules: this._maskRules,
     };
   },
 
@@ -897,6 +1012,7 @@ const App = {
         email: document.getElementById("mask-email").checked,
         mac: document.getElementById("mask-mac").checked,
         custom: document.getElementById("mask-custom").value,
+        rules: this._maskRules,
       };
       localStorage.setItem("templazy_mask_settings", JSON.stringify(s));
     } catch (e) { /* localStorage不可でも無視 */ }
@@ -910,6 +1026,7 @@ const App = {
         if (typeof s[k] === "boolean") document.getElementById("mask-" + k).checked = s[k];
       });
       if (typeof s.custom === "string") document.getElementById("mask-custom").value = s.custom;
+      if (Array.isArray(s.rules)) this._maskRules = s.rules;
     } catch (e) { /* 無視 */ }
   },
 
