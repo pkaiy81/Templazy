@@ -356,7 +356,7 @@
           <div style="margin-top:12px;">
             <label class="field">カスタム語 / パターン（1行に1つ）</label>
             <textarea id="mask-custom" style="min-height:130px;font-size:13px;line-height:1.5;"
-              placeholder="例:&#10;ACME&#10;DS = /volumes/([^/\s]+)&#10;VM = ([\w.\-]+)\.cfg&#10;NODE = node-([0-9]+)&#10;NAME = name=([\w.\-]+)">
+              placeholder="例:&#10;ACME&#10;DS = /volumes/([^/\s]+)&#10;VM = ([\w.\-]+)\.cfg&#10;NODE = node-([0-9]+)&#10;NAME = name=([\w.\-]+)"></textarea>
             <p class="hint">
               ・ふつうの語 → その語をそのままマスク（<code>&lt;DATA_1&gt;</code>）<br>
               ・<code>LABEL = 正規表現</code>（LABELは大文字）→ 正規表現の <strong>丸カッコ () で囲った部分</strong>を <code>&lt;LABEL_1&gt;</code> でマスク（例 <code>&lt;DS_1&gt;</code> <code>&lt;VM_1&gt;</code>）<br>
